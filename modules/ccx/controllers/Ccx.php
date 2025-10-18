@@ -335,13 +335,12 @@ class Ccx extends AdminController
             }
             $template['type'] = $type;
 
-            $filtersJsonInput = (string) $this->input->post('filters_json');
-            $filtersJsonInput  = '';
+            $filtersJsonInput = (string) $this->input->post('filters_json', false);
             $filtersJsonStored = null;
             $filterErrors      = [];
 
             if ($type !== 'dynamic') {
-                $filtersJsonInput = (string) $this->input->post('filters_json');
+                $filtersJsonInput = (string) $this->input->post('filters_json', false);
                 [$filters, $filterErrors] = $this->parse_filters_json($filtersJsonInput);
                 $filtersJsonStored = ! empty($filters) ? json_encode($filters, JSON_UNESCAPED_UNICODE) : null;
             }
@@ -350,7 +349,7 @@ class Ccx extends AdminController
 
             $normalizedQuery = '';
             if ($type === 'sql') {
-                $rawQuery = (string) $this->input->post('sql_query');
+                $rawQuery = (string) $this->input->post('sql_query', false);
                 $normalizedQuery = html_entity_decode($rawQuery, ENT_QUOTES | ENT_HTML5);
                 $normalizedQuery = str_replace(["\r\n", "\r"], "\n", $normalizedQuery);
             }
@@ -391,7 +390,7 @@ class Ccx extends AdminController
 
                 $templateId = $this->ccx_model->save_template($id, $template, $columns, $sqlPayload);
             } elseif ($type === 'dynamic') {
-                $dynamicInput = $this->input->post('dynamic');
+                $dynamicInput = $this->input->post('dynamic', false);
                 if (! is_array($dynamicInput)) {
                     $dynamicInput = [];
                 }
