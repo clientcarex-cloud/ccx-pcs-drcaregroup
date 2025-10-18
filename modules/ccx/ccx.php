@@ -120,6 +120,36 @@ if (! function_exists('ccx_ensure_report_tables')) {
                 KEY `template_fk` (`template_id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         }
+
+        if (! $CI->db->table_exists($prefix . 'ccx_report_template_pages')) {
+            $CI->db->query('CREATE TABLE `' . $prefix . "ccx_report_template_pages` (
+                `id` INT(11) NOT NULL AUTO_INCREMENT,
+                `template_id` INT(11) NOT NULL,
+                `page_key` VARCHAR(50) NOT NULL,
+                `sql_query` LONGTEXT NULL,
+                `html_content` LONGTEXT NULL,
+                `filters` LONGTEXT NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `template_page_unique` (`template_id`, `page_key`),
+                KEY `template_idx` (`template_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } else {
+            $fields = $CI->db->list_fields($prefix . 'ccx_report_template_pages');
+
+            if (! in_array('html_content', $fields, true)) {
+                $CI->db->query('ALTER TABLE `' . $prefix . "ccx_report_template_pages` ADD `html_content` LONGTEXT NULL AFTER `sql_query`");
+            }
+
+            if (! in_array('filters', $fields, true)) {
+                $CI->db->query('ALTER TABLE `' . $prefix . "ccx_report_template_pages` ADD `filters` LONGTEXT NULL AFTER `html_content`");
+            }
+
+            if (! in_array('page_key', $fields, true)) {
+                $CI->db->query('ALTER TABLE `' . $prefix . "ccx_report_template_pages` ADD `page_key` VARCHAR(50) NOT NULL AFTER `template_id`");
+            }
+        }
     }
 }
 
@@ -133,50 +163,92 @@ function ccx_admin_init()
 
     ccx_ensure_report_tables();
 
-    if (! (is_admin() || has_permission('reports', '', 'view') || has_permission('invoices', '', 'view'))) {
+    if (function_exists('register_staff_capabilities')) {
+        $fullCapabilities = [
+            'capabilities' => [
+                'view'      => _l('permission_view'),
+                'view_own'  => _l('permission_view_own'),
+                'create'    => _l('permission_create'),
+                'edit'      => _l('permission_edit'),
+                'delete'    => _l('permission_delete'),
+            ],
+        ];
+
+        register_staff_capabilities('ccx_reports', $fullCapabilities, 'CCX: ' . ccx_lang('ccx_menu_reports', 'Reports'));
+        register_staff_capabilities('ccx_templates', $fullCapabilities, 'CCX: ' . ccx_lang('ccx_menu_templates', 'Report Templates'));
+        register_staff_capabilities('ccx_sections', $fullCapabilities, 'CCX: ' . ccx_lang('ccx_menu_sections', 'Report Sections'));
+
+        $importExportCaps = [
+            'capabilities' => [
+                'view'   => _l('permission_view'),
+                'create' => _l('permission_create'),
+            ],
+        ];
+        register_staff_capabilities('ccx_import_export', $importExportCaps, 'CCX: ' . ccx_lang('ccx_menu_import_export', 'Import/Export'));
+    }
+
+    $canViewReports      = staff_can('view', 'ccx_reports') || staff_can('view_own', 'ccx_reports');
+    $canViewTemplates    = staff_can('view', 'ccx_templates') || staff_can('view_own', 'ccx_templates');
+    $canViewSections     = staff_can('view', 'ccx_sections') || staff_can('view_own', 'ccx_sections');
+    $canViewImportExport = staff_can('view', 'ccx_import_export');
+
+    if (is_admin()) {
+        $CI->load->model('ccx/ccx_model');
+        $CI->ccx_model->ensure_sample_dynamic_template();
+    }
+
+    if (! (is_admin() || $canViewReports || $canViewTemplates || $canViewSections || $canViewImportExport)) {
         return;
     }
 
     $parentSlug = 'ccx';
 
     $CI->app_menu->add_sidebar_menu_item($parentSlug, [
-        'name'     => ccx_lang('ccx_menu_title', 'CCX'),
+        'name'     => ccx_lang('ccx_menu_title', 'CCX Reports'),
         'href'     => admin_url('ccx/reports'),
         'icon'     => 'fa fa-area-chart',
         'position' => 51,
     ]);
 
-    $CI->app_menu->add_sidebar_children_item($parentSlug, [
-        'slug'     => 'ccx_reports',
-        'name'     => ccx_lang('ccx_menu_reports', 'Reports'),
-        'href'     => admin_url('ccx/reports'),
-        'icon'     => 'fa fa-bar-chart',
-        'position' => 1,
-    ]);
+    if (is_admin() || $canViewReports) {
+        $CI->app_menu->add_sidebar_children_item($parentSlug, [
+            'slug'     => 'ccx_reports',
+            'name'     => ccx_lang('ccx_menu_reports', 'Reports'),
+            'href'     => admin_url('ccx/reports'),
+            'icon'     => 'fa fa-bar-chart',
+            'position' => 1,
+        ]);
+    }
 
-    $CI->app_menu->add_sidebar_children_item($parentSlug, [
-        'slug'     => 'ccx_report_templates',
-        'name'     => ccx_lang('ccx_menu_templates', 'Report Templates'),
-        'href'     => admin_url('ccx/templates'),
-        'icon'     => 'fa fa-code',
-        'position' => 2,
-    ]);
+    if (is_admin() || $canViewTemplates) {
+        $CI->app_menu->add_sidebar_children_item($parentSlug, [
+            'slug'     => 'ccx_report_templates',
+            'name'     => ccx_lang('ccx_menu_templates', 'Report Templates'),
+            'href'     => admin_url('ccx/templates'),
+            'icon'     => 'fa fa-code',
+            'position' => 2,
+        ]);
+    }
 
-    $CI->app_menu->add_sidebar_children_item($parentSlug, [
-        'slug'     => 'ccx_report_sections',
-        'name'     => ccx_lang('ccx_menu_sections', 'Report Sections'),
-        'href'     => admin_url('ccx/sections'),
-        'icon'     => 'fa fa-object-group',
-        'position' => 3,
-    ]);
+    if (is_admin() || $canViewSections) {
+        $CI->app_menu->add_sidebar_children_item($parentSlug, [
+            'slug'     => 'ccx_report_sections',
+            'name'     => ccx_lang('ccx_menu_sections', 'Report Sections'),
+            'href'     => admin_url('ccx/sections'),
+            'icon'     => 'fa fa-object-group',
+            'position' => 3,
+        ]);
+    }
 
-    $CI->app_menu->add_sidebar_children_item($parentSlug, [
-        'slug'     => 'ccx_import_export',
-        'name'     => ccx_lang('ccx_menu_import_export', 'Import/Export'),
-        'href'     => admin_url('ccx/import_export'),
-        'icon'     => 'fa fa-exchange',
-        'position' => 4,
-    ]);
+    if (is_admin() || $canViewImportExport) {
+        $CI->app_menu->add_sidebar_children_item($parentSlug, [
+            'slug'     => 'ccx_import_export',
+            'name'     => ccx_lang('ccx_menu_import_export', 'Import/Export'),
+            'href'     => admin_url('ccx/import_export'),
+            'icon'     => 'fa fa-exchange',
+            'position' => 4,
+        ]);
+    }
 }
 
 function ccx_admin_head()
@@ -207,6 +279,7 @@ function ccx_module_uninstall(): void
         'ccx_report_section_templates',
         'ccx_report_sections',
         'ccx_report_template_columns',
+        'ccx_report_template_pages',
         'ccx_report_templates',
     ];
 

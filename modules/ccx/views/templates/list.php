@@ -209,10 +209,12 @@
                 <h1><?= html_escape($title); ?></h1>
                 <p><?= html_escape(ccx_lang('ccx_templates_intro', 'Design reusable report blueprints and manage their column logic without touching code.')); ?></p>
             </div>
-            <a href="<?= admin_url('ccx/template'); ?>" class="btn btn-primary">
-                <i class="fa fa-plus"></i>
-                <?= html_escape(ccx_lang('ccx_template_add_new', 'New Template')); ?>
-            </a>
+            <?php if (staff_can('create', 'ccx_templates') || is_admin()) { ?>
+                <a href="<?= admin_url('ccx/template'); ?>" class="btn btn-primary">
+                    <i class="fa fa-plus"></i>
+                    <?= html_escape(ccx_lang('ccx_template_add_new', 'New Template')); ?>
+                </a>
+            <?php } ?>
         </div>
 
         <div class="ccx-surface">
@@ -227,22 +229,30 @@
                 <div class="ccx-empty">
                     <h4><?= html_escape(ccx_lang('ccx_templates_empty', 'No templates have been created yet.')); ?></h4>
                     <p><?= html_escape(ccx_lang('ccx_templates_empty_cta', 'Start by creating your first report template.')); ?></p>
-                    <a href="<?= admin_url('ccx/template'); ?>" class="btn btn-primary">
-                        <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_template_add_new', 'New Template')); ?>
-                    </a>
+                    <?php if (staff_can('create', 'ccx_templates') || is_admin()) { ?>
+                        <a href="<?= admin_url('ccx/template'); ?>" class="btn btn-primary">
+                            <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_template_add_new', 'New Template')); ?>
+                        </a>
+                    <?php } ?>
                 </div>
             <?php } else { ?>
                 <div class="ccx-card-grid" id="ccx-template-grid">
                     <?php foreach ($templates as $template) {
+                        $canViewTemplate   = staff_can('view', 'ccx_templates') || staff_can('view_own', 'ccx_templates') || is_admin();
+                        $canDeleteTemplate = staff_can('delete', 'ccx_templates') || is_admin();
                         $updated = ! empty($template['updated_at']) ? _d($template['updated_at']) : _d($template['created_at']);
                         $searchIndex = strtolower(trim(($template['name'] ?? '') . ' ' . ($template['description'] ?? '')));
                         $templateType = strtolower((string) ($template['type'] ?? 'smart'));
-                        if (! in_array($templateType, ['smart', 'sql'], true)) {
+                        if (! in_array($templateType, ['smart', 'sql', 'dynamic'], true)) {
                             $templateType = 'smart';
                         }
-                        $typeLabel = $templateType === 'sql'
-                            ? ccx_lang('ccx_template_type_sql', 'Custom SQL Query')
-                            : ccx_lang('ccx_template_type_smart', 'Smart Report');
+                        if ($templateType === 'sql') {
+                            $typeLabel = ccx_lang('ccx_template_type_sql', 'Custom SQL Query');
+                        } elseif ($templateType === 'dynamic') {
+                            $typeLabel = ccx_lang('ccx_template_type_dynamic', 'Dynamic High Level');
+                        } else {
+                            $typeLabel = ccx_lang('ccx_template_type_smart', 'Smart Report');
+                        }
                         $isActive = (int) ($template['is_active'] ?? 1) === 1;
                     ?>
                         <div class="ccx-template-card" data-search="<?= html_escape($searchIndex); ?>">
@@ -257,18 +267,24 @@
                                         <i class="fa <?= $isActive ? 'fa-toggle-on' : 'fa-toggle-off'; ?>"></i>
                                         <?= html_escape($isActive ? ccx_lang('ccx_template_sql_is_active', 'Active') : ccx_lang('ccx_template_sql_inactive', 'Inactive')); ?>
                                     </span>
+                                <?php } elseif ($templateType === 'dynamic') { ?>
+                                    <span><i class="fa fa-window-maximize"></i><?= html_escape(ccx_lang('ccx_templates_card_dynamic', 'Main & Sub Pages')); ?></span>
                                 <?php } else { ?>
                                     <span><i class="fa fa-columns"></i><?= (int) $template['column_count']; ?> <?= html_escape(ccx_lang('ccx_templates_card_columns', 'Columns')); ?></span>
                                 <?php } ?>
                                 <span><i class="fa fa-clock-o"></i><?= html_escape(ccx_lang('ccx_templates_card_updated', 'Updated')); ?> <?= html_escape($updated); ?></span>
                             </div>
                             <div class="ccx-template-actions">
-                                <a href="<?= admin_url('ccx/template/' . (int) $template['id']); ?>" class="btn btn-outline-primary">
-                                    <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_templates_card_edit', 'Configure')); ?>
-                                </a>
-                                <a href="<?= admin_url('ccx/delete_template/' . (int) $template['id']); ?>" class="btn btn-danger" onclick="return confirm('<?= html_escape(ccx_lang('delete_confirm', 'Are you sure you want to delete this item?')); ?>');">
-                                    <i class="fa fa-trash"></i>
-                                </a>
+                                <?php if ($canViewTemplate) { ?>
+                                    <a href="<?= admin_url('ccx/template/' . (int) $template['id']); ?>" class="btn btn-outline-primary">
+                                        <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_templates_card_edit', 'Configure')); ?>
+                                    </a>
+                                <?php } ?>
+                                <?php if ($canDeleteTemplate) { ?>
+                                    <a href="<?= admin_url('ccx/delete_template/' . (int) $template['id']); ?>" class="btn btn-danger" onclick="return confirm('<?= html_escape(ccx_lang('delete_confirm', 'Are you sure you want to delete this item?')); ?>');">
+                                        <i class="fa fa-trash"></i>
+                                    </a>
+                                <?php } ?>
                             </div>
                         </div>
                     <?php } ?>

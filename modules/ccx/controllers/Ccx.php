@@ -7,7 +7,26 @@ class Ccx extends AdminController
     {
         parent::__construct();
 
-        if (! (is_admin() || has_permission('reports', '', 'view') || has_permission('invoices', '', 'view'))) {
+        $hasAccess = is_admin()
+            || staff_can('view', 'ccx_reports')
+            || staff_can('view_own', 'ccx_reports')
+            || staff_can('create', 'ccx_reports')
+            || staff_can('edit', 'ccx_reports')
+            || staff_can('delete', 'ccx_reports')
+            || staff_can('view', 'ccx_templates')
+            || staff_can('view_own', 'ccx_templates')
+            || staff_can('create', 'ccx_templates')
+            || staff_can('edit', 'ccx_templates')
+            || staff_can('delete', 'ccx_templates')
+            || staff_can('view', 'ccx_sections')
+            || staff_can('view_own', 'ccx_sections')
+            || staff_can('create', 'ccx_sections')
+            || staff_can('edit', 'ccx_sections')
+            || staff_can('delete', 'ccx_sections')
+            || staff_can('view', 'ccx_import_export')
+            || staff_can('create', 'ccx_import_export');
+
+        if (! $hasAccess) {
             access_denied('CCX');
         }
 
@@ -21,6 +40,10 @@ class Ccx extends AdminController
 
     public function reports()
     {
+        if (! (staff_can('view', 'ccx_reports') || staff_can('view_own', 'ccx_reports') || is_admin())) {
+            access_denied('ccx_reports');
+        }
+
         $data['title']    = ccx_lang('ccx_reports_page_title', 'Reports');
         $data['sections'] = $this->ccx_model->get_sections_overview();
 
@@ -29,6 +52,10 @@ class Ccx extends AdminController
 
     public function report($id)
     {
+        if (! (staff_can('view', 'ccx_reports') || staff_can('view_own', 'ccx_reports') || is_admin())) {
+            access_denied('ccx_reports');
+        }
+
         $id = (int) $id;
         if ($id <= 0) {
             show_404();
@@ -76,6 +103,77 @@ class Ccx extends AdminController
             return;
         }
 
+        if ($this->ccx_model->is_dynamic_template($template)) {
+            $pageLabels = [
+                'main' => ccx_lang('ccx_template_dynamic_page_main', 'Main Page'),
+                'sub'  => ccx_lang('ccx_template_dynamic_page_sub', 'Sub Page'),
+            ];
+
+            $pagesData   = $this->ccx_model->get_dynamic_template_pages($template['id']);
+            $activePage  = strtolower((string) $this->input->get('page'));
+            if (! in_array($activePage, array_keys($pageLabels), true)) {
+                $activePage = 'main';
+            }
+
+            $pagePayloads = [];
+            foreach ($pageLabels as $pageKey => $label) {
+                $definition = $pagesData[$pageKey] ?? [
+                    'sql_query'    => '',
+                    'html_content' => '',
+                    'filters'      => null,
+                ];
+
+                $filtersDefined = $this->decode_saved_filters($definition['filters'] ?? null);
+                $context        = $this->build_filter_context($filtersDefined, null, null, 'filters_' . $pageKey);
+
+                $resultData = [
+                    'columns'   => [],
+                    'rows'      => [],
+                    'row_limit' => null,
+                ];
+                $queryError = null;
+
+                if ($context['has_errors']) {
+                    $queryError = ccx_lang('ccx_template_sql_filters_invalid', 'Filters could not be applied. Please review the highlighted fields.');
+                } elseif (trim((string) ($definition['sql_query'] ?? '')) !== '') {
+                    [$result, $error] = $this->ccx_model->run_sql_template_query(
+                        ['sql_query' => $definition['sql_query']],
+                        $context['values']
+                    );
+                    $resultData['columns']   = $result['columns'] ?? [];
+                    $resultData['rows']      = $result['rows'] ?? [];
+                    $resultData['row_limit'] = $result['row_limit'] ?? null;
+                    $queryError              = $error;
+                }
+
+                $pagePayloads[$pageKey] = [
+                    'label'              => $label,
+                    'sql_query'          => $definition['sql_query'] ?? '',
+                    'html_content'       => $definition['html_content'] ?? '',
+                    'filters'            => $context['filters'],
+                    'filters_applied'    => $context['values'],
+                    'filters_has_errors' => $context['has_errors'],
+                    'filters_submitted'  => $context['submitted'],
+                    'result'             => $resultData,
+                    'query_error'        => $queryError,
+                ];
+            }
+
+            $data['title']       = ccx_lang('ccx_reports_view_page_title', 'View Report');
+            $data['template']    = $template;
+            $data['pages']       = $pagePayloads;
+            $data['pageLabels']  = $pageLabels;
+            $data['activePage']  = $activePage;
+
+            if (! empty($pagePayloads[$activePage]['query_error'])) {
+                set_alert('danger', $pagePayloads[$activePage]['query_error']);
+            }
+
+            $this->load->view('ccx/reports/dynamic', $data);
+
+            return;
+        }
+
         $filterDefinitions = $this->decode_saved_filters($template['filters'] ?? null);
         $filterContext     = $this->build_filter_context($filterDefinitions);
 
@@ -106,6 +204,10 @@ class Ccx extends AdminController
             show_error('No direct script access allowed');
         }
 
+        if (! (staff_can('view', 'ccx_reports') || staff_can('view_own', 'ccx_reports') || is_admin())) {
+            access_denied('ccx_reports');
+        }
+
         $id = (int) $id;
         if ($id <= 0) {
             show_404();
@@ -116,7 +218,7 @@ class Ccx extends AdminController
             show_404();
         }
 
-        if ($this->ccx_model->is_sql_template($template)) {
+        if ($this->ccx_model->is_sql_template($template) || $this->ccx_model->is_dynamic_template($template)) {
             show_404();
         }
 
@@ -187,6 +289,10 @@ class Ccx extends AdminController
 
     public function templates()
     {
+        if (! (staff_can('view', 'ccx_templates') || staff_can('view_own', 'ccx_templates') || is_admin())) {
+            access_denied('ccx_templates');
+        }
+
         $data['title']     = ccx_lang('ccx_templates_page_title', 'Report Templates');
         $data['templates'] = $this->ccx_model->get_templates();
 
@@ -196,18 +302,51 @@ class Ccx extends AdminController
     public function template($id = null)
     {
         $id = $id !== null ? (int) $id : null;
+        $isPost = $this->input->method() === 'post';
+        $canViewTemplates = staff_can('view', 'ccx_templates') || staff_can('view_own', 'ccx_templates') || is_admin();
 
-        if ($this->input->method() === 'post') {
+        if ($isPost) {
+            if ($id) {
+                if (! (staff_can('edit', 'ccx_templates') || is_admin())) {
+                    access_denied('ccx_templates');
+                }
+            } else {
+                if (! (staff_can('create', 'ccx_templates') || is_admin())) {
+                    access_denied('ccx_templates');
+                }
+            }
+        } else {
+            if ($id) {
+                if (! $canViewTemplates) {
+                    access_denied('ccx_templates');
+                }
+            } else {
+                if (! ($canViewTemplates || staff_can('create', 'ccx_templates') || is_admin())) {
+                    access_denied('ccx_templates');
+                }
+            }
+        }
+
+        if ($isPost) {
             $template   = $this->input->post('template') ?? [];
             $type       = strtolower(trim((string) ($template['type'] ?? 'smart')));
-            if (! in_array($type, ['smart', 'sql'], true)) {
+            if (! in_array($type, ['smart', 'sql', 'dynamic'], true)) {
                 $type = 'smart';
             }
             $template['type'] = $type;
 
             $filtersJsonInput = (string) $this->input->post('filters_json');
-            [$filters, $filterErrors] = $this->parse_filters_json($filtersJsonInput);
-            $filtersJsonStored = ! empty($filters) ? json_encode($filters, JSON_UNESCAPED_UNICODE) : null;
+            $filtersJsonInput  = '';
+            $filtersJsonStored = null;
+            $filterErrors      = [];
+
+            if ($type !== 'dynamic') {
+                $filtersJsonInput = (string) $this->input->post('filters_json');
+                [$filters, $filterErrors] = $this->parse_filters_json($filtersJsonInput);
+                $filtersJsonStored = ! empty($filters) ? json_encode($filters, JSON_UNESCAPED_UNICODE) : null;
+            }
+
+            $template['filters'] = $type !== 'dynamic' ? $filtersJsonStored : null;
 
             $normalizedQuery = '';
             if ($type === 'sql') {
@@ -216,7 +355,7 @@ class Ccx extends AdminController
                 $normalizedQuery = str_replace(["\r\n", "\r"], "\n", $normalizedQuery);
             }
 
-            if (! empty($filterErrors)) {
+            if ($type !== 'dynamic' && ! empty($filterErrors)) {
                 set_alert('danger', implode('<br>', $filterErrors));
                 $this->session->set_flashdata('ccx_template_filters_json', $filtersJsonInput);
                 $this->session->set_flashdata('ccx_template_selected_type', $type);
@@ -225,8 +364,6 @@ class Ccx extends AdminController
                 }
                 redirect(admin_url('ccx/template' . ($id ? '/' . $id : '')));
             }
-
-            $template['filters'] = $filtersJsonStored;
 
             if ($type === 'sql') {
                 if (trim((string) ($template['name'] ?? '')) === '' || trim($normalizedQuery) === '') {
@@ -253,6 +390,66 @@ class Ccx extends AdminController
                 ];
 
                 $templateId = $this->ccx_model->save_template($id, $template, $columns, $sqlPayload);
+            } elseif ($type === 'dynamic') {
+                $dynamicInput = $this->input->post('dynamic');
+                if (! is_array($dynamicInput)) {
+                    $dynamicInput = [];
+                }
+
+                $pageLabels = [
+                    'main' => ccx_lang('ccx_template_dynamic_page_main', 'Main Page'),
+                    'sub'  => ccx_lang('ccx_template_dynamic_page_sub', 'Sub Page'),
+                ];
+
+                $dynamicPayload = [];
+                $dynamicErrors  = [];
+                $dynamicPrefill = [];
+
+                foreach ($pageLabels as $pageKey => $labelText) {
+                    $pageData = $dynamicInput[$pageKey] ?? [];
+                    if (! is_array($pageData)) {
+                        $pageData = [];
+                    }
+
+                    $sqlRaw        = (string) ($pageData['sql_query'] ?? '');
+                    $sqlNormalized = html_entity_decode($sqlRaw, ENT_QUOTES | ENT_HTML5);
+                    $sqlNormalized = str_replace(["\r\n", "\r"], "\n", $sqlNormalized);
+
+                    if (trim($sqlNormalized) !== '' && ! $this->ccx_model->is_safe_sql_query($sqlNormalized)) {
+                        $dynamicErrors[] = sprintf(ccx_lang('ccx_template_dynamic_sql_invalid', '%s SQL query must be read-only.'), $labelText);
+                    }
+
+                    $htmlContent = (string) ($pageData['html_content'] ?? $pageData['html'] ?? '');
+                    $filtersJson = (string) ($pageData['filters'] ?? '');
+
+                    [$pageFilters, $pageFilterErrors] = $this->parse_filters_json($filtersJson);
+                    if (! empty($pageFilterErrors)) {
+                        foreach ($pageFilterErrors as $error) {
+                            $dynamicErrors[] = sprintf('%s: %s', $labelText, $error);
+                        }
+                    }
+
+                    $dynamicPayload[$pageKey] = [
+                        'sql_query'    => $sqlNormalized,
+                        'html_content' => $htmlContent,
+                        'filters'      => $pageFilters,
+                    ];
+
+                    $dynamicPrefill[$pageKey] = [
+                        'sql_query'    => $sqlNormalized,
+                        'html_content' => $htmlContent,
+                        'filters'      => $filtersJson,
+                    ];
+                }
+
+                if (! empty($dynamicErrors)) {
+                    set_alert('danger', implode('<br>', $dynamicErrors));
+                    $this->session->set_flashdata('ccx_template_dynamic_input', $dynamicPrefill);
+                    $this->session->set_flashdata('ccx_template_selected_type', 'dynamic');
+                    redirect(admin_url('ccx/template' . ($id ? '/' . $id : '')));
+                }
+
+                $templateId = $this->ccx_model->save_template($id, $template, [], [], $dynamicPayload);
             } else {
                 $columns    = $this->input->post('columns') ?? [];
                 $templateId = $this->ccx_model->save_template($id, $template, $columns);
@@ -280,14 +477,14 @@ class Ccx extends AdminController
         }
 
         $selectedType = $templateRecord ? strtolower((string) ($templateRecord['type'] ?? 'smart')) : 'smart';
-        if (! in_array($selectedType, ['smart', 'sql'], true)) {
+        if (! in_array($selectedType, ['smart', 'sql', 'dynamic'], true)) {
             $selectedType = 'smart';
         }
 
         $flashSelectedType = $this->session->flashdata('ccx_template_selected_type');
         if ($flashSelectedType !== null) {
             $flashSelectedType = strtolower(trim((string) $flashSelectedType));
-            if (in_array($flashSelectedType, ['smart', 'sql'], true)) {
+            if (in_array($flashSelectedType, ['smart', 'sql', 'dynamic'], true)) {
                 $selectedType = $flashSelectedType;
             }
         }
@@ -295,6 +492,49 @@ class Ccx extends AdminController
         $columns = [];
         if ($selectedType === 'smart' && $id) {
             $columns = $this->ccx_model->get_template_columns($id);
+        }
+
+        $dynamicPages = [
+            'main' => [
+                'sql_query'    => '',
+                'html_content' => '',
+                'filters_json' => '',
+            ],
+            'sub' => [
+                'sql_query'    => '',
+                'html_content' => '',
+                'filters_json' => '',
+            ],
+        ];
+
+        if ($selectedType === 'dynamic' && $templateRecord) {
+            $storedPages = $this->ccx_model->get_dynamic_template_pages((int) $templateRecord['id']);
+
+            foreach ($storedPages as $pageKey => $pageData) {
+                if (! isset($dynamicPages[$pageKey])) {
+                    continue;
+                }
+                $decodedFilters = $this->decode_saved_filters($pageData['filters'] ?? null);
+                $dynamicPages[$pageKey] = [
+                    'sql_query'    => $pageData['sql_query'] ?? '',
+                    'html_content' => $pageData['html_content'] ?? '',
+                    'filters_json' => ! empty($decodedFilters)
+                        ? json_encode($decodedFilters, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                        : '',
+                ];
+            }
+        }
+
+        $flashDynamic = $this->session->flashdata('ccx_template_dynamic_input');
+        if (is_array($flashDynamic)) {
+            foreach ($flashDynamic as $pageKey => $pageData) {
+                if (! isset($dynamicPages[$pageKey]) || ! is_array($pageData)) {
+                    continue;
+                }
+                $dynamicPages[$pageKey]['sql_query']    = (string) ($pageData['sql_query'] ?? $dynamicPages[$pageKey]['sql_query']);
+                $dynamicPages[$pageKey]['html_content'] = (string) ($pageData['html_content'] ?? $dynamicPages[$pageKey]['html_content']);
+                $dynamicPages[$pageKey]['filters_json'] = (string) ($pageData['filters'] ?? $dynamicPages[$pageKey]['filters_json']);
+            }
         }
 
         $sqlTemplate = [
@@ -328,6 +568,8 @@ class Ccx extends AdminController
         $data['sqlTemplate']   = $sqlTemplate;
         $data['templateFilters'] = $templateFilters;
         $data['filtersJson']   = $filtersJson;
+        $data['dynamicPages']  = $dynamicPages;
+        $data['selectedType']  = $selectedType;
 
         $this->load->view('ccx/templates/form', $data);
     }
@@ -394,6 +636,10 @@ class Ccx extends AdminController
 
     public function delete_template($id)
     {
+        if (! (staff_can('delete', 'ccx_templates') || is_admin())) {
+            access_denied('ccx_templates');
+        }
+
         $id = (int) $id;
         if ($id <= 0) {
             show_404();
@@ -410,6 +656,10 @@ class Ccx extends AdminController
 
     public function sections()
     {
+        if (! (staff_can('view', 'ccx_sections') || staff_can('view_own', 'ccx_sections') || is_admin())) {
+            access_denied('ccx_sections');
+        }
+
         $data['title']    = ccx_lang('ccx_sections_page_title', 'Report Sections');
         $data['sections'] = $this->ccx_model->get_sections();
 
@@ -419,8 +669,32 @@ class Ccx extends AdminController
     public function section($id = null)
     {
         $id = $id !== null ? (int) $id : null;
+        $isPost = $this->input->method() === 'post';
+        $canViewSections = staff_can('view', 'ccx_sections') || staff_can('view_own', 'ccx_sections') || is_admin();
 
-        if ($this->input->method() === 'post') {
+        if ($isPost) {
+            if ($id) {
+                if (! (staff_can('edit', 'ccx_sections') || is_admin())) {
+                    access_denied('ccx_sections');
+                }
+            } else {
+                if (! (staff_can('create', 'ccx_sections') || is_admin())) {
+                    access_denied('ccx_sections');
+                }
+            }
+        } else {
+            if ($id) {
+                if (! $canViewSections) {
+                    access_denied('ccx_sections');
+                }
+            } else {
+                if (! ($canViewSections || staff_can('create', 'ccx_sections') || is_admin())) {
+                    access_denied('ccx_sections');
+                }
+            }
+        }
+
+        if ($isPost) {
             $section     = $this->input->post('section') ?? [];
             $templateIds = $this->input->post('template_ids') ?? [];
 
@@ -450,6 +724,10 @@ class Ccx extends AdminController
 
     public function import_export()
     {
+        if (! (staff_can('view', 'ccx_import_export') || is_admin())) {
+            access_denied('ccx_import_export');
+        }
+
         $data['title']         = ccx_lang('ccx_import_export_page_title', 'Import & Export');
         $data['exportUrl']     = admin_url('ccx/export_bundle');
         $data['importAction']  = admin_url('ccx/import_bundle');
@@ -462,6 +740,10 @@ class Ccx extends AdminController
     {
         if ($this->input->method() !== 'get') {
             show_404();
+        }
+
+        if (! (staff_can('view', 'ccx_import_export') || is_admin())) {
+            access_denied('ccx_import_export');
         }
 
         $templateId = (int) ($this->input->get('template_id') ?? 0);
@@ -501,6 +783,10 @@ class Ccx extends AdminController
     {
         if ($this->input->method() !== 'post') {
             show_404();
+        }
+
+        if (! (staff_can('create', 'ccx_import_export') || is_admin())) {
+            access_denied('ccx_import_export');
         }
 
         $file       = $_FILES['import_file'] ?? null;
@@ -699,6 +985,9 @@ class Ccx extends AdminController
 
     /**
      * @param array<int,array<string,mixed>> $definitions
+     * @param array<string,mixed>|null       $input
+     * @param bool|null                      $submittedOverride
+     * @param string                         $inputKey
      *
      * @return array{
      *     filters: array<int,array<string,mixed>>,
@@ -707,11 +996,11 @@ class Ccx extends AdminController
      *     submitted: bool
      * }
      */
-    private function build_filter_context(array $definitions, ?array $input = null, ?bool $submittedOverride = null): array
+    private function build_filter_context(array $definitions, ?array $input = null, ?bool $submittedOverride = null, string $inputKey = 'filters'): array
     {
         if ($input === null) {
-            $rawInput  = $this->input->get('filters');
-            $submitted = $submittedOverride ?? isset($_GET['filters']);
+            $rawInput  = $this->input->get($inputKey);
+            $submitted = $submittedOverride ?? isset($_GET[$inputKey]);
         } else {
             $rawInput  = $input;
             $submitted = $submittedOverride ?? true;

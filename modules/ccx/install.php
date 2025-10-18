@@ -108,6 +108,22 @@ function ccx_install()
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
+    if (! $CI->db->table_exists(db_prefix() . 'ccx_report_template_pages')) {
+        $CI->db->query('CREATE TABLE `' . db_prefix() . "ccx_report_template_pages` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `template_id` INT(11) NOT NULL,
+            `page_key` VARCHAR(50) NOT NULL,
+            `sql_query` LONGTEXT NULL,
+            `html_content` LONGTEXT NULL,
+            `filters` LONGTEXT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `template_page_unique` (`template_id`, `page_key`),
+            KEY `template_idx` (`template_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+
     log_activity('CCX module installed (report designer tables ensured)');
 }
 

@@ -169,9 +169,11 @@
                 <h1><?= html_escape($title); ?></h1>
                 <p><?= html_escape(ccx_lang('ccx_sections_intro', 'Organise report templates into branded sections and curate what your team sees.')); ?></p>
             </div>
-            <a href="<?= admin_url('ccx/section'); ?>" class="btn btn-primary">
-                <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_section_add_new', 'New Section')); ?>
-            </a>
+            <?php if (staff_can('create', 'ccx_sections') || is_admin()) { ?>
+                <a href="<?= admin_url('ccx/section'); ?>" class="btn btn-primary">
+                    <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_section_add_new', 'New Section')); ?>
+                </a>
+            <?php } ?>
         </div>
 
         <div class="ccx-surface">
@@ -186,9 +188,11 @@
                 <div class="ccx-empty">
                     <h4><?= html_escape(ccx_lang('ccx_sections_empty', 'No sections have been created yet.')); ?></h4>
                     <p><?= html_escape(ccx_lang('ccx_sections_empty_cta', 'Create a section and assign templates to showcase in Reports.')); ?></p>
-                    <a href="<?= admin_url('ccx/section'); ?>" class="btn btn-primary">
-                        <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_section_add_new', 'New Section')); ?>
-                    </a>
+                    <?php if (staff_can('create', 'ccx_sections') || is_admin()) { ?>
+                        <a href="<?= admin_url('ccx/section'); ?>" class="btn btn-primary">
+                            <i class="fa fa-plus"></i> <?= html_escape(ccx_lang('ccx_section_add_new', 'New Section')); ?>
+                        </a>
+                    <?php } ?>
                 </div>
             <?php } else { ?>
                 <div class="ccx-card-grid" id="ccx-section-grid">
@@ -206,12 +210,16 @@
                                 <span><i class="fa fa-sort-amount-up"></i><?= (int) $section['display_order']; ?></span>
                             </div>
                             <div class="ccx-section-actions">
-                                <a href="<?= admin_url('ccx/section/' . (int) $section['id']); ?>" class="btn btn-outline-primary">
-                                    <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_templates_card_edit', 'Configure')); ?>
-                                </a>
-                                <a href="<?= admin_url('ccx/delete_section/' . (int) $section['id']); ?>" class="btn btn-danger" onclick="return confirm('<?= html_escape(ccx_lang('delete_confirm', 'Are you sure you want to delete this item?')); ?>');">
-                                    <i class="fa fa-trash"></i>
-                                </a>
+                                <?php if (staff_can('view', 'ccx_sections') || staff_can('view_own', 'ccx_sections') || is_admin()) { ?>
+                                    <a href="<?= admin_url('ccx/section/' . (int) $section['id']); ?>" class="btn btn-outline-primary">
+                                        <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_templates_card_edit', 'Configure')); ?>
+                                    </a>
+                                <?php } ?>
+                                <?php if (staff_can('delete', 'ccx_sections') || is_admin()) { ?>
+                                    <a href="<?= admin_url('ccx/delete_section/' . (int) $section['id']); ?>" class="btn btn-danger" onclick="return confirm('<?= html_escape(ccx_lang('delete_confirm', 'Are you sure you want to delete this item?')); ?>');">
+                                        <i class="fa fa-trash"></i>
+                                    </a>
+                                <?php } ?>
                             </div>
                         </div>
                     <?php } ?>

@@ -1,5 +1,9 @@
 <?php defined('BASEPATH') or exit('No direct script access allowed'); ?>
 <?php init_head(); ?>
+<?php
+$canExport = staff_can('view', 'ccx_import_export') || is_admin();
+$canImport = staff_can('create', 'ccx_import_export') || is_admin();
+?>
 <style>
     .ccx-hero {
         background: linear-gradient(135deg, #0f172a, #2563eb);
@@ -89,20 +93,22 @@
                     <h2><?= html_escape(ccx_lang('ccx_import_export_export_title', 'Export reports')); ?></h2>
                     <p><?= html_escape(ccx_lang('ccx_import_export_export_desc', 'Download every template, column configuration and section assignment as a JSON file.')); ?></p>
                 </div>
-                <?= form_open($exportUrl, ['method' => 'get']); ?>
-                    <div>
-                        <label class="control-label" for="ccx-export-template"><?= html_escape(ccx_lang('ccx_import_export_export_select_label', 'Choose report')); ?></label>
-                        <select id="ccx-export-template" name="template_id" class="form-control">
-                            <option value=""><?= html_escape(ccx_lang('ccx_import_export_export_all_option', 'All reports')); ?></option>
-                            <?php foreach ($templatesList as $template) { ?>
-                                <option value="<?= (int) $template['id']; ?>"><?= html_escape($template['name']); ?></option>
-                            <?php } ?>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fa fa-download mright5"></i><?= html_escape(ccx_lang('ccx_import_export_export_button', 'Download JSON')); ?>
-                    </button>
-                <?= form_close(); ?>
+                <?php if ($canExport) { ?>
+                    <?= form_open($exportUrl, ['method' => 'get']); ?>
+                        <div>
+                            <label class="control-label" for="ccx-export-template"><?= html_escape(ccx_lang('ccx_import_export_export_select_label', 'Choose report')); ?></label>
+                            <select id="ccx-export-template" name="template_id" class="form-control">
+                                <option value=""><?= html_escape(ccx_lang('ccx_import_export_export_all_option', 'All reports')); ?></option>
+                                <?php foreach ($templatesList as $template) { ?>
+                                    <option value="<?= (int) $template['id']; ?>"><?= html_escape($template['name']); ?></option>
+                                <?php } ?>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-download mright5"></i><?= html_escape(ccx_lang('ccx_import_export_export_button', 'Download JSON')); ?>
+                        </button>
+                    <?= form_close(); ?>
+                <?php } ?>
             </div>
 
             <div class="ccx-import-card">
@@ -110,25 +116,29 @@
                     <h2><?= html_escape(ccx_lang('ccx_import_export_import_title', 'Import reports')); ?></h2>
                     <p><?= html_escape(ccx_lang('ccx_import_export_import_desc', 'Restore templates and sections from a CCX JSON export. Existing items are left untouched.')); ?></p>
                 </div>
-                <?= form_open_multipart($importAction); ?>
-                    <div>
-                        <label class="control-label" for="ccx-import-file"><?= html_escape(ccx_lang('ccx_import_export_upload_label', 'JSON file')); ?></label>
-                        <input type="file"
-                               class="form-control"
-                               id="ccx-import-file"
-                               name="import_file"
-                               accept=".json,application/json"
-                               >
-                    </div>
-                    <div>
-                        <label class="control-label" for="ccx-import-json"><?= html_escape(ccx_lang('ccx_import_export_import_textarea_label', 'JSON payload')); ?></label>
-                        <textarea id="ccx-import-json" name="import_json" class="form-control" rows="8" placeholder="<?= html_escape(ccx_lang('ccx_import_export_import_textarea_placeholder', 'Paste a CCX export bundle here…')); ?>"></textarea>
-                    </div>
+                <?php if ($canImport) { ?>
+                    <?= form_open_multipart($importAction); ?>
+                        <div>
+                            <label class="control-label" for="ccx-import-file"><?= html_escape(ccx_lang('ccx_import_export_upload_label', 'JSON file')); ?></label>
+                            <input type="file"
+                                   class="form-control"
+                                   id="ccx-import-file"
+                                   name="import_file"
+                                   accept=".json,application/json"
+                                   >
+                        </div>
+                        <div>
+                            <label class="control-label" for="ccx-import-json"><?= html_escape(ccx_lang('ccx_import_export_import_textarea_label', 'JSON payload')); ?></label>
+                            <textarea id="ccx-import-json" name="import_json" class="form-control" rows="8" placeholder="<?= html_escape(ccx_lang('ccx_import_export_import_textarea_placeholder', 'Paste a CCX export bundle here…')); ?>"></textarea>
+                        </div>
+                        <p class="help-text"><?= html_escape(ccx_lang('ccx_import_export_import_help', 'A successful import creates new templates and sections without overwriting existing ones.')); ?></p>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fa fa-upload mright5"></i><?= html_escape(ccx_lang('ccx_import_export_import_button', 'Import bundle')); ?>
+                        </button>
+                    <?= form_close(); ?>
+                <?php } else { ?>
                     <p class="help-text"><?= html_escape(ccx_lang('ccx_import_export_import_help', 'A successful import creates new templates and sections without overwriting existing ones.')); ?></p>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fa fa-upload mright5"></i><?= html_escape(ccx_lang('ccx_import_export_import_button', 'Import bundle')); ?>
-                    </button>
-                <?= form_close(); ?>
+                <?php } ?>
             </div>
         </div>
     </div>

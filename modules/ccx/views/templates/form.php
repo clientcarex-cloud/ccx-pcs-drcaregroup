@@ -160,6 +160,39 @@
     .ccx-template-panel.ccx-is-hidden {
         display: none;
     }
+    .ccx-dynamic-nav {
+        border-bottom: none;
+        display: inline-flex;
+        gap: 10px;
+    }
+    .ccx-dynamic-nav > li > a {
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        border-radius: 999px;
+        padding: 10px 20px;
+        background: #f8fafc;
+        color: #0f172a;
+        font-weight: 600;
+        transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+    }
+    .ccx-dynamic-nav > li.active > a,
+    .ccx-dynamic-nav > li > a:focus,
+    .ccx-dynamic-nav > li > a:hover {
+        background: #2563eb;
+        color: #fafafa;
+        border-color: #1d4ed8;
+        box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+    }
+    .ccx-dynamic-pane {
+        padding: 24px 0 10px;
+    }
+    .ccx-dynamic-pane .form-group + .form-group {
+        margin-top: 18px;
+    }
+    .ccx-dynamic-hint {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 6px;
+    }
     .ccx-is-hidden {
         display: none !important;
     }
@@ -252,6 +285,9 @@
                             <option value="sql" <?= ($templateType ?? 'smart') === 'sql' ? 'selected' : ''; ?>>
                                 <?= html_escape(ccx_lang('ccx_template_type_sql', 'Custom SQL Query')); ?>
                             </option>
+                            <option value="dynamic" <?= ($templateType ?? 'smart') === 'dynamic' ? 'selected' : ''; ?>>
+                                <?= html_escape(ccx_lang('ccx_template_type_dynamic', 'Dynamic High Level')); ?>
+                            </option>
                         </select>
                         <small class="tw-text-xs tw-text-neutral-500"><?= html_escape(ccx_lang('ccx_template_type_hint', 'Switch between the visual designer and a custom SQL query.')); ?></small>
                     </div>
@@ -298,13 +334,83 @@
                         </p>
                     </div>
                     </div>
-                    <div class="checkbox checkbox-primary">
+                <div class="ccx-template-panel <?= ($templateType ?? 'smart') === 'dynamic' ? '' : 'ccx-is-hidden'; ?>" data-template-panel="dynamic">
+                    <?php
+                    $dynamicMain = $dynamicPages['main'] ?? ['sql_query' => '', 'html_content' => '', 'filters_json' => ''];
+                    $dynamicSub  = $dynamicPages['sub'] ?? ['sql_query' => '', 'html_content' => '', 'filters_json' => ''];
+                    ?>
+                    <div class="tw-flex tw-flex-col tw-gap-2 tw-mb-4">
+                        <h2><?= html_escape(ccx_lang('ccx_template_dynamic_heading', 'Dynamic Pages')); ?></h2>
+                        <p class="tw-text-xs tw-text-neutral-500 tw-mb-0"><?= html_escape(ccx_lang('ccx_template_dynamic_intro', 'Define the primary view and an optional sub page with custom SQL, HTML layouts and runtime filters.')); ?></p>
+                    </div>
+                    <ul class="nav nav-tabs ccx-dynamic-nav" role="tablist">
+                        <li role="presentation" class="active">
+                            <a href="#ccx-dynamic-main" aria-controls="ccx-dynamic-main" role="tab" data-toggle="tab">
+                                <?= html_escape(ccx_lang('ccx_template_dynamic_page_main', 'Main Page')); ?>
+                            </a>
+                        </li>
+                        <li role="presentation">
+                            <a href="#ccx-dynamic-sub" aria-controls="ccx-dynamic-sub" role="tab" data-toggle="tab">
+                                <?= html_escape(ccx_lang('ccx_template_dynamic_page_sub', 'Sub Page')); ?>
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="tab-content ccx-dynamic-pane-container">
+                        <div role="tabpanel" class="tab-pane active in ccx-dynamic-pane" id="ccx-dynamic-main">
+                            <div class="form-group">
+                                <label for="dynamic-main-sql"><?= html_escape(ccx_lang('ccx_template_dynamic_sql_label', 'SQL Query')); ?></label>
+                                <textarea id="dynamic-main-sql" name="dynamic[main][sql_query]" rows="10" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicMain['sql_query']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_sql_hint', 'Use read-only SELECT statements. Reference filters with {{filter:your_key}} tokens.')); ?>
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label for="dynamic-main-html"><?= html_escape(ccx_lang('ccx_template_dynamic_html_label', 'HTML / CSS Layout')); ?></label>
+                                <textarea id="dynamic-main-html" name="dynamic[main][html_content]" rows="10" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicMain['html_content']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_html_hint', 'Provide the markup for this page. Include inline <style> blocks if needed.')); ?>
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label for="dynamic-main-filters"><?= html_escape(ccx_lang('ccx_template_dynamic_filters_label', 'Filters (JSON definition)')); ?></label>
+                                <textarea id="dynamic-main-filters" name="dynamic[main][filters]" rows="6" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicMain['filters_json']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_filters_hint', 'Define inputs with the same structure as SQL filters. Example: [{"key":"range_from","label":"Date From","type":"date"}]')); ?>
+                                </p>
+                            </div>
+                        </div>
+                        <div role="tabpanel" class="tab-pane ccx-dynamic-pane" id="ccx-dynamic-sub">
+                            <div class="form-group">
+                                <label for="dynamic-sub-sql"><?= html_escape(ccx_lang('ccx_template_dynamic_sql_label', 'SQL Query')); ?></label>
+                                <textarea id="dynamic-sub-sql" name="dynamic[sub][sql_query]" rows="10" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicSub['sql_query']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_sql_hint', 'Use read-only SELECT statements. Reference filters with {{filter:your_key}} tokens.')); ?>
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label for="dynamic-sub-html"><?= html_escape(ccx_lang('ccx_template_dynamic_html_label', 'HTML / CSS Layout')); ?></label>
+                                <textarea id="dynamic-sub-html" name="dynamic[sub][html_content]" rows="10" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicSub['html_content']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_html_hint', 'Provide the markup for this page. Include inline <style> blocks if needed.')); ?>
+                                </p>
+                            </div>
+                            <div class="form-group">
+                                <label for="dynamic-sub-filters"><?= html_escape(ccx_lang('ccx_template_dynamic_filters_label', 'Filters (JSON definition)')); ?></label>
+                                <textarea id="dynamic-sub-filters" name="dynamic[sub][filters]" rows="6" class="form-control code-field" spellcheck="false"><?= html_escape($dynamicSub['filters_json']); ?></textarea>
+                                <p class="ccx-dynamic-hint">
+                                    <?= html_escape(ccx_lang('ccx_template_dynamic_filters_hint', 'Define inputs with the same structure as SQL filters. Example: [{"key":"range_from","label":"Date From","type":"date"}]')); ?>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                    <div class="checkbox checkbox-primary <?= ($templateType ?? 'smart') === 'sql' ? '' : 'ccx-is-hidden'; ?>" data-sql-only>
                         <input type="checkbox" id="ccx-sql-is-active" name="is_active" value="1" <?= (int) ($sqlTemplate['is_active'] ?? 1) === 1 ? 'checked' : ''; ?>>
                         <label for="ccx-sql-is-active"><?= html_escape(ccx_lang('ccx_template_sql_is_active', 'Active')); ?></label>
                     </div>
                 </div>
 
-                <div class="ccx-card ccx-template-filters" data-template-filters>
+                <div class="ccx-card ccx-template-filters <?= ($templateType ?? 'smart') === 'sql' ? '' : 'ccx-is-hidden'; ?>" data-template-filters>
                     <div class="form-group">
                         <label for="filters_json"><?= html_escape(ccx_lang('ccx_template_filters_json_label', 'Runtime Filters (JSON definition)')); ?></label>
                         <textarea id="filters_json" name="filters_json" rows="8" class="form-control code-field" spellcheck="false"><?= html_escape($filtersJson ?? ''); ?></textarea>
@@ -342,27 +448,7 @@
                 <?= form_close(); ?>
             </div>
 
-            <div class="ccx-card ccx-template-panel <?= ($templateType ?? 'smart') === 'sql' ? 'ccx-is-hidden' : ''; ?>" data-template-panel="smart">
-                <div class="ccx-guide-card">
-                    <h4><i class="fa fa-compass tw-mr-2"></i><?= html_escape(ccx_lang('ccx_templates_intro', 'Quick Start Guide')); ?></h4>
-                    <ol class="ccx-step-list">
-                        <li><?= html_escape(ccx_lang('ccx_template_field_table', 'Choose the base table and add joins for any related records you need.')); ?></li>
-                        <li><?= html_escape(ccx_lang('ccx_template_field_conditions', 'Capture the metric (SUM, VALUE, AVG...) then apply filters to pre-aggregate the data.')); ?></li>
-                        <li><?= html_escape(ccx_lang('ccx_template_date_filter_hint', 'Pick a date column if you want runtime ranges, and toggle currency formatting.')); ?></li>
-                        <li><?= html_escape(ccx_lang('ccx_template_formula_notice', 'Combine metrics in advanced formulas or reuse them across other templates.')); ?></li>
-                    </ol>
-                </div>
-
-                <div class="form-group">
-                    <label><?= html_escape(ccx_lang('ccx_reports_dataset_heading', 'Need inspiration?')); ?></label>
-                    <p class="tw-text-sm tw-text-slate-600 tw-mb-2">
-                        <?= html_escape(ccx_lang('ccx_template_formula_hint', 'Monthly cash collections: join invoices to payments, SUM the payment amount, and apply the runtime range to the payment date.')); ?>
-                    </p>
-                    <a href="<?= admin_url('ccx/reports'); ?>" class="btn btn-light btn-block">
-                        <i class="fa fa-area-chart"></i> <?= html_escape(ccx_lang('ccx_reports_launch_cta', 'Preview Existing Reports')); ?>
-                    </a>
-                </div>
-            </div>
+            
 
             <div class="ccx-card ccx-template-panel <?= ($templateType ?? 'smart') === 'sql' ? '' : 'ccx-is-hidden'; ?>" data-template-panel="sql">
                 <div class="ccx-guide-card">
@@ -561,6 +647,16 @@ $formulaSourceTemplate = ob_get_clean();
                 hint.addClass('ccx-is-hidden');
             }
         });
+
+        $('[data-template-filters]').toggleClass('ccx-is-hidden', selected !== 'sql');
+        $('[data-sql-only]').toggleClass('ccx-is-hidden', selected !== 'sql');
+
+        if (selected === 'dynamic') {
+            const $dynamicFirstTab = $('.ccx-dynamic-nav li:first-child a');
+            if ($dynamicFirstTab.length) {
+                $dynamicFirstTab.tab('show');
+            }
+        }
     }
 
     const $templateType = $('#template-type');
@@ -1034,6 +1130,11 @@ $formulaSourceTemplate = ob_get_clean();
             addFormulaSource(columnWrapper);
         }
 
+        if (mode === 'formula') {
+            columnWrapper.find('.ccx-role-select').val('metric');
+        }
+
+        updateRoleState(columnWrapper);
         toggleColumnRequirement(columnWrapper);
     }
 

@@ -143,9 +143,11 @@
                         <span class="ccx-ghost-icon"><i class="fa fa-arrow-left"></i></span>
                         <span><?= html_escape(ccx_lang('ccx_reports_back_to_list', 'Back to Reports')); ?></span>
                     </a>
-                    <a href="<?= admin_url('ccx/template/' . (int) $template['id']); ?>" class="btn btn-primary">
-                        <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_reports_template_actions', 'Manage')); ?>
-                    </a>
+                    <?php if (staff_can('view', 'ccx_templates') || staff_can('view_own', 'ccx_templates') || is_admin()) { ?>
+                        <a href="<?= admin_url('ccx/template/' . (int) $template['id']); ?>" class="btn btn-primary">
+                            <i class="fa fa-pencil"></i> <?= html_escape(ccx_lang('ccx_reports_template_actions', 'Manage')); ?>
+                        </a>
+                    <?php } ?>
                 </div>
             </div>
         </div>

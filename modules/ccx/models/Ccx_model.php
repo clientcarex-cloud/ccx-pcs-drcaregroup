@@ -5,9 +5,10 @@ class Ccx_model extends App_Model
 {
     private static $schemaEnsured = false;
 
-    private const TEMPLATE_TYPE_SMART = 'smart';
-    private const TEMPLATE_TYPE_SQL   = 'sql';
-    private const SQL_MAX_ROWS        = 500;
+    private const TEMPLATE_TYPE_SMART   = 'smart';
+    private const TEMPLATE_TYPE_SQL     = 'sql';
+    private const TEMPLATE_TYPE_DYNAMIC = 'dynamic';
+    private const SQL_MAX_ROWS          = 500;
 
     /**
      * Aggregates supported when defining template columns.
@@ -70,7 +71,7 @@ class Ccx_model extends App_Model
     {
         $type = strtolower(trim((string) $type));
 
-        return in_array($type, [self::TEMPLATE_TYPE_SMART, self::TEMPLATE_TYPE_SQL], true)
+        return in_array($type, [self::TEMPLATE_TYPE_SMART, self::TEMPLATE_TYPE_SQL, self::TEMPLATE_TYPE_DYNAMIC], true)
             ? $type
             : self::TEMPLATE_TYPE_SMART;
     }
@@ -83,6 +84,11 @@ class Ccx_model extends App_Model
     public function is_sql_template(array $template): bool
     {
         return $this->normalize_template_type($template['type'] ?? null) === self::TEMPLATE_TYPE_SQL;
+    }
+
+    public function is_dynamic_template(array $template): bool
+    {
+        return $this->normalize_template_type($template['type'] ?? null) === self::TEMPLATE_TYPE_DYNAMIC;
     }
 
     public function get_templates(): array
@@ -1147,12 +1153,55 @@ class Ccx_model extends App_Model
         return $columns;
     }
 
-    public function save_template(?int $id, array $templateData, array $columns, array $sqlData = [])
+    public function get_dynamic_template_pages(int $templateId): array
+    {
+        $this->ensure_schema();
+
+        $rows = $this->db
+            ->where('template_id', $templateId)
+            ->order_by('page_key', 'ASC')
+            ->get(db_prefix() . 'ccx_report_template_pages')
+            ->result_array();
+
+        $pages = [
+            'main' => [
+                'sql_query'    => '',
+                'html_content' => '',
+                'filters'      => null,
+            ],
+            'sub' => [
+                'sql_query'    => '',
+                'html_content' => '',
+                'filters'      => null,
+            ],
+        ];
+
+        foreach ($rows as $row) {
+            $key = strtolower((string) ($row['page_key'] ?? ''));
+            if (! in_array($key, ['main', 'sub'], true)) {
+                continue;
+            }
+
+            $pages[$key] = [
+                'sql_query'    => (string) ($row['sql_query'] ?? ''),
+                'html_content' => (string) ($row['html_content'] ?? ''),
+                'filters'      => $row['filters'] ?? null,
+            ];
+        }
+
+        return $pages;
+    }
+
+    public function save_template(?int $id, array $templateData, array $columns = [], array $sqlData = [], array $dynamicData = [])
     {
         $type = $this->normalize_template_type($templateData['type'] ?? null);
 
         if ($type === self::TEMPLATE_TYPE_SQL) {
             return $this->save_sql_template($id, $templateData, $sqlData);
+        }
+
+        if ($type === self::TEMPLATE_TYPE_DYNAMIC) {
+            return $this->save_dynamic_template($id, $templateData, $dynamicData);
         }
 
         return $this->save_smart_template($id, $templateData, $columns);
@@ -1238,12 +1287,196 @@ class Ccx_model extends App_Model
         return $templateId;
     }
 
+    private function save_dynamic_template(?int $id, array $templateData, array $dynamicData)
+    {
+        $this->ensure_schema();
+
+        $payload = $this->prepare_template_payload($templateData, self::TEMPLATE_TYPE_DYNAMIC);
+        if ($payload === null) {
+            return false;
+        }
+
+        $preparedPages = $this->prepare_dynamic_pages_payload($dynamicData);
+        if (empty($preparedPages)) {
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        $this->db->trans_start();
+
+        if ($id) {
+            $payload['updated_at'] = $now;
+            $this->db->where('id', $id)->update(db_prefix() . 'ccx_report_templates', $payload);
+            $templateId = $id;
+        } else {
+            $payload['created_at'] = $now;
+            $this->db->insert(db_prefix() . 'ccx_report_templates', $payload);
+            $templateId = (int) $this->db->insert_id();
+        }
+
+        $this->db->where('template_id', $templateId)->delete(db_prefix() . 'ccx_report_template_columns');
+        $this->db->where('template_id', $templateId)->delete(db_prefix() . 'ccx_report_template_pages');
+
+        foreach ($preparedPages as $page) {
+            $page['template_id'] = $templateId;
+            $page['created_at']  = $now;
+            $page['updated_at']  = $now;
+            $this->db->insert(db_prefix() . 'ccx_report_template_pages', $page);
+        }
+
+        $this->db->trans_complete();
+
+        if ($this->db->trans_status() === false) {
+            return false;
+        }
+
+        return $templateId;
+    }
+
+    public function ensure_sample_dynamic_template(): bool
+    {
+        $this->ensure_schema();
+
+        $name = 'Staff Task Performance';
+
+        $mainSql = <<<'SQL'
+SELECT
+    (@rownum := @rownum + 1) AS `S.no`,
+    stats.staff_name AS `Staff Name`,
+    CONCAT('<a href="', CHAR(63), 'page=sub&filters_sub[staff_id]=', stats.staff_id, '&filters_sub[status]=active">', stats.active_tasks, '</a>') AS `Active tasks`,
+    CONCAT('<a href="', CHAR(63), 'page=sub&filters_sub[staff_id]=', stats.staff_id, '&filters_sub[status]=pending">', stats.pending_tasks, '</a>') AS `Pending tasks`,
+    CONCAT('<a href="', CHAR(63), 'page=sub&filters_sub[staff_id]=', stats.staff_id, '&filters_sub[status]=on_time">', stats.on_time_tasks, '</a>') AS `On-time`,
+    CONCAT('<a href="', CHAR(63), 'page=sub&filters_sub[staff_id]=', stats.staff_id, '&filters_sub[status]=delayed">', stats.delayed_tasks, '</a>') AS `Delayed`,
+    CONCAT('<a href="', CHAR(63), 'page=sub&filters_sub[staff_id]=', stats.staff_id, '&filters_sub[status]=completed">', stats.completed_tasks, '</a>') AS `Completed`,
+    CONCAT(ROUND(stats.completion_percentage, 2), '%') AS `Percentage of Completion`
+FROM (
+    SELECT
+        s.staffid AS staff_id,
+        TRIM(CONCAT(IFNULL(s.firstname, ''), ' ', IFNULL(s.lastname, ''))) AS staff_name,
+        SUM(CASE WHEN t.status IN (1, 2, 3, 4) THEN 1 ELSE 0 END) AS active_tasks,
+        SUM(CASE WHEN t.status = 1 THEN 1 ELSE 0 END) AS pending_tasks,
+        SUM(CASE WHEN t.status = 5 AND (t.duedate IS NULL OR (t.datefinished IS NOT NULL AND t.datefinished <= t.duedate)) THEN 1 ELSE 0 END) AS on_time_tasks,
+        SUM(
+            CASE
+                WHEN t.status = 5 AND t.duedate IS NOT NULL AND t.datefinished IS NOT NULL AND t.datefinished > t.duedate THEN 1
+                WHEN t.status <> 5 AND t.duedate IS NOT NULL AND t.duedate < CURDATE() THEN 1
+                ELSE 0
+            END
+        ) AS delayed_tasks,
+        SUM(CASE WHEN t.status = 5 THEN 1 ELSE 0 END) AS completed_tasks,
+        IFNULL((SUM(CASE WHEN t.status = 5 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100, 0) AS completion_percentage
+    FROM {{db_prefix}}staff AS s
+    INNER JOIN {{db_prefix}}task_assigned AS ta ON ta.staffid = s.staffid
+    INNER JOIN {{db_prefix}}tasks AS t ON t.id = ta.taskid
+    WHERE s.active = 1
+    GROUP BY s.staffid
+) AS stats
+CROSS JOIN (SELECT @rownum := 0) AS seq
+ORDER BY stats.staff_name;
+SQL;
+
+        $subSql = <<<'SQL'
+SELECT
+    (@rownum := @rownum + 1) AS `S.No`,
+    detail.staff_name AS `Staff Name`,
+    detail.status_label AS `Status of Tasks`,
+    detail.task_token AS `Task Name`
+FROM (
+    SELECT
+        ta.staffid,
+        TRIM(CONCAT(IFNULL(s.firstname, ''), ' ', IFNULL(s.lastname, ''))) AS staff_name,
+        CASE t.status
+            WHEN 5 THEN 'Completed'
+            WHEN 4 THEN 'In Progress'
+            WHEN 3 THEN 'Testing'
+            WHEN 2 THEN 'Awaiting Feedback'
+            ELSE 'Not Started'
+        END AS status_label,
+        CONCAT_WS(
+            '||',
+            CAST(t.id AS CHAR),
+            IFNULL(NULLIF(t.name, ''), CONCAT('Task #', t.id))
+        ) AS task_token,
+        t.duedate,
+        t.datefinished,
+        t.status,
+        t.id
+    FROM {{db_prefix}}task_assigned AS ta
+    INNER JOIN {{db_prefix}}tasks AS t ON t.id = ta.taskid
+    INNER JOIN {{db_prefix}}staff AS s ON s.staffid = ta.staffid
+    WHERE ta.staffid = {{filter:staff_id}}
+      AND (
+            ({{filter:status}} = 'active'   AND t.status IN (1, 2, 3, 4))
+         OR ({{filter:status}} = 'pending'  AND t.status = 1)
+         OR ({{filter:status}} = 'completed' AND t.status = 5)
+         OR ({{filter:status}} = 'on_time' AND t.status = 5 AND (t.duedate IS NULL OR (t.datefinished IS NOT NULL AND t.datefinished <= t.duedate)))
+         OR ({{filter:status}} = 'delayed' AND (
+                (t.status = 5 AND t.duedate IS NOT NULL AND t.datefinished IS NOT NULL AND t.datefinished > t.duedate)
+             OR (t.status <> 5 AND t.duedate IS NOT NULL AND t.duedate < CURDATE())
+         ))
+      )
+) AS detail
+CROSS JOIN (SELECT @rownum := 0) AS seq
+ORDER BY detail.duedate IS NULL ASC, detail.duedate ASC, detail.id ASC;
+SQL;
+
+        $dynamicData = [
+            'main' => [
+                'sql_query'    => $mainSql,
+                'html_content' => '',
+                'filters'      => null,
+            ],
+            'sub'  => [
+                'sql_query'    => $subSql,
+                'html_content' => '',
+                'filters'      => [
+                    [
+                        'key'      => 'staff_id',
+                        'label'    => 'Staff ID',
+                        'type'     => 'number',
+                        'required' => true,
+                    ],
+                    [
+                        'key'      => 'status',
+                        'label'    => 'Status Filter',
+                        'type'     => 'text',
+                        'required' => true,
+                    ],
+                ],
+            ],
+        ];
+
+        $existing = $this->db
+            ->where('name', $name)
+            ->where('type', self::TEMPLATE_TYPE_DYNAMIC)
+            ->get(db_prefix() . 'ccx_report_templates')
+            ->row_array();
+
+        $templateData = [
+            'name'        => $name,
+            'description' => 'High-level productivity dashboard for assigned tasks per staff member.',
+            'type'        => self::TEMPLATE_TYPE_DYNAMIC,
+        ];
+
+        if ($existing) {
+            $templateData['description'] = $existing['description'] ?? $templateData['description'];
+
+            $this->save_template((int) $existing['id'], $templateData, [], [], $dynamicData);
+
+            return true;
+        }
+
+        return (bool) $this->save_template(null, $templateData, [], [], $dynamicData);
+    }
+
     public function delete_template(int $id): bool
     {
         $this->ensure_schema();
 
         $this->db->trans_start();
         $this->db->where('template_id', $id)->delete(db_prefix() . 'ccx_report_template_columns');
+        $this->db->where('template_id', $id)->delete(db_prefix() . 'ccx_report_template_pages');
         $this->db->where('template_id', $id)->delete(db_prefix() . 'ccx_report_section_templates');
         $this->db->where('id', $id)->delete(db_prefix() . 'ccx_report_templates');
         $this->db->trans_complete();
@@ -1758,6 +1991,10 @@ class Ccx_model extends App_Model
             $payload['sql_query'] = $query;
             $payload['filters']   = $filters;
             $payload['is_active'] = isset($sqlData['is_active']) && (int) $sqlData['is_active'] === 1 ? 1 : 0;
+        } elseif ($payload['type'] === self::TEMPLATE_TYPE_DYNAMIC) {
+            $payload['sql_query'] = null;
+            $payload['filters']   = null;
+            $payload['is_active'] = 1;
         } else {
             $filters = $data['filters'] ?? null;
             if ($filters !== null && trim((string) $filters) === '') {
@@ -1923,6 +2160,49 @@ class Ccx_model extends App_Model
         }
 
         return $prepared;
+    }
+
+    private function prepare_dynamic_pages_payload(array $input): array
+    {
+        $pages    = [];
+        $allowed  = ['main', 'sub'];
+
+        foreach ($allowed as $pageKey) {
+            $pageInput = $input[$pageKey] ?? [];
+            if (! is_array($pageInput)) {
+                $pageInput = [];
+            }
+
+            $sqlQuery = isset($pageInput['sql_query']) ? (string) $pageInput['sql_query'] : '';
+            $sqlQuery = html_entity_decode($sqlQuery, ENT_QUOTES | ENT_HTML5);
+            $sqlQuery = str_replace(["\r\n", "\r"], "\n", $sqlQuery);
+
+            if ($sqlQuery !== '' && ! $this->is_safe_sql_query($sqlQuery)) {
+                $sqlQuery = '';
+            }
+
+            $htmlContent = isset($pageInput['html_content'])
+                ? (string) $pageInput['html_content']
+                : (string) ($pageInput['html'] ?? '');
+
+            $filtersPayload = $pageInput['filters'] ?? null;
+            if (is_array($filtersPayload)) {
+                $filtersPayload = json_encode($filtersPayload, JSON_UNESCAPED_UNICODE);
+            } elseif (is_string($filtersPayload)) {
+                $filtersPayload = trim($filtersPayload) !== '' ? $filtersPayload : null;
+            } else {
+                $filtersPayload = null;
+            }
+
+            $pages[] = [
+                'page_key'     => $pageKey,
+                'sql_query'    => $sqlQuery !== '' ? $sqlQuery : null,
+                'html_content' => $htmlContent !== '' ? $htmlContent : null,
+                'filters'      => $filtersPayload,
+            ];
+        }
+
+        return $pages;
     }
 
     private function sanitize_currency_display($value): string
@@ -2600,6 +2880,34 @@ class Ccx_model extends App_Model
 
             if (! in_array('role', $fields, true)) {
                 $this->db->query('ALTER TABLE `' . $table . "` ADD `role` VARCHAR(20) NOT NULL DEFAULT 'metric' AFTER `mode`");
+            }
+        }
+
+        $pagesTable = db_prefix() . 'ccx_report_template_pages';
+        if (! $this->db->table_exists($pagesTable)) {
+            $this->db->query('CREATE TABLE `' . $pagesTable . "` (
+                `id` INT(11) NOT NULL AUTO_INCREMENT,
+                `template_id` INT(11) NOT NULL,
+                `page_key` VARCHAR(50) NOT NULL,
+                `sql_query` LONGTEXT NULL,
+                `html_content` LONGTEXT NULL,
+                `filters` LONGTEXT NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `template_page_unique` (`template_id`, `page_key`),
+                KEY `template_idx` (`template_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } else {
+            $fields = $this->db->list_fields($pagesTable);
+            if (! in_array('html_content', $fields, true)) {
+                $this->db->query('ALTER TABLE `' . $pagesTable . '` ADD `html_content` LONGTEXT NULL AFTER `sql_query`');
+            }
+            if (! in_array('filters', $fields, true)) {
+                $this->db->query('ALTER TABLE `' . $pagesTable . '` ADD `filters` LONGTEXT NULL AFTER `html_content`');
+            }
+            if (! in_array('page_key', $fields, true)) {
+                $this->db->query('ALTER TABLE `' . $pagesTable . '` ADD `page_key` VARCHAR(50) NOT NULL AFTER `template_id`');
             }
         }
 
@@ -3417,6 +3725,18 @@ class Ccx_model extends App_Model
                 $columns[] = $columnRow;
             }
 
+            $pageRows = $this->db
+                ->where('template_id', $templateId)
+                ->order_by('page_key', 'ASC')
+                ->get(db_prefix() . 'ccx_report_template_pages')
+                ->result_array() ?? [];
+
+            $pages = [];
+            foreach ($pageRows as $pageRow) {
+                unset($pageRow['id'], $pageRow['template_id']);
+                $pages[] = $pageRow;
+            }
+
             $record = $row;
             unset($record['id']);
 
@@ -3424,6 +3744,7 @@ class Ccx_model extends App_Model
                 'source_id' => $templateId,
                 'record'    => $record,
                 'columns'   => $columns,
+                'pages'     => $pages,
             ];
         }
 
@@ -3576,7 +3897,10 @@ class Ccx_model extends App_Model
 
             $description = trim((string) ($record['description'] ?? ''));
             $isActive    = isset($record['is_active']) && (int) $record['is_active'] === 0 ? 0 : 1;
-            $filters     = $type === self::TEMPLATE_TYPE_SQL ? ($record['filters'] ?? null) : null;
+            $rawFilters  = $record['filters'] ?? null;
+            if ($rawFilters !== null && trim((string) $rawFilters) === '') {
+                $rawFilters = null;
+            }
 
             $templateRow = [
                 'name'        => $name,
@@ -3584,7 +3908,7 @@ class Ccx_model extends App_Model
                 'type'        => $type,
                 'is_active'   => $type === self::TEMPLATE_TYPE_SQL ? $isActive : 1,
                 'sql_query'   => $type === self::TEMPLATE_TYPE_SQL ? $sqlQuery : null,
-                'filters'     => $type === self::TEMPLATE_TYPE_SQL && $filters !== null && trim((string) $filters) !== '' ? $filters : null,
+                'filters'     => $rawFilters,
                 'created_at'  => $now,
                 'updated_at'  => null,
             ];
@@ -3603,6 +3927,42 @@ class Ccx_model extends App_Model
             }
 
             if ($type === self::TEMPLATE_TYPE_SQL) {
+                continue;
+            }
+
+            if ($type === self::TEMPLATE_TYPE_DYNAMIC) {
+                $pagesInput = $templateItem['pages'] ?? [];
+                if (is_array($pagesInput)) {
+                    foreach ($pagesInput as $pageRow) {
+                        if (! is_array($pageRow)) {
+                            continue;
+                        }
+
+                        $pageKey = strtolower(trim((string) ($pageRow['page_key'] ?? '')));
+                        if (! in_array($pageKey, ['main', 'sub'], true)) {
+                            continue;
+                        }
+
+                        $sqlQuery = isset($pageRow['sql_query']) ? trim((string) $pageRow['sql_query']) : '';
+                        $htmlContent = isset($pageRow['html_content']) ? (string) $pageRow['html_content'] : '';
+                        $filtersValue = $pageRow['filters'] ?? null;
+
+                        if (is_string($filtersValue) && trim($filtersValue) === '') {
+                            $filtersValue = null;
+                        }
+
+                        $this->db->insert(db_prefix() . 'ccx_report_template_pages', [
+                            'template_id'  => $newTemplateId,
+                            'page_key'     => $pageKey,
+                            'sql_query'    => $sqlQuery !== '' ? $sqlQuery : null,
+                            'html_content' => $htmlContent !== '' ? $htmlContent : null,
+                            'filters'      => $filtersValue,
+                            'created_at'   => $now,
+                            'updated_at'   => null,
+                        ]);
+                    }
+                }
+
                 continue;
             }
 
