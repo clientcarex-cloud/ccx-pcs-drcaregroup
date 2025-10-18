@@ -2093,10 +2093,64 @@ SQL;
             $key = $matches[1];
             $bindings[] = array_key_exists($key, $filters) ? $filters[$key] : null;
 
-            return '?';
+            return '__CCX_BIND_' . (count($bindings) - 1) . '__';
         }, $query);
 
-        return [$processed ?? $query, $bindings];
+        if ($processed === null) {
+            $processed = $query;
+        }
+
+        $tokenPattern = '/__CCX_BIND_\d+__/';
+        $splitPattern = '/(__CCX_BIND_\d+__)/';
+
+        $processed = preg_replace_callback('/(["\'])(?:\\\\.|(?!\1).)*\1/s', function ($matches) use ($tokenPattern, $splitPattern) {
+            $fullString = $matches[0];
+            $content    = substr($fullString, 1, -1);
+
+            if ($content === '' || ! preg_match($tokenPattern, $content)) {
+                return $fullString;
+            }
+
+            $parts = preg_split($splitPattern, $content, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+            if ($parts === false) {
+                return $fullString;
+            }
+
+            $reconstructed = [];
+            foreach ($parts as $part) {
+                if ($part === '') {
+                    continue;
+                }
+
+                if (preg_match($tokenPattern, $part)) {
+                    $reconstructed[] = '?';
+                    continue;
+                }
+
+                $reconstructed[] = "'" . str_replace("'", "''", $part) . "'";
+            }
+
+            if (empty($reconstructed)) {
+                return $fullString;
+            }
+
+            if (count($reconstructed) === 1) {
+                return $reconstructed[0];
+            }
+
+            return 'CONCAT(' . implode(', ', $reconstructed) . ')';
+        }, $processed);
+
+        if ($processed === null) {
+            $processed = $query;
+        }
+
+        $processed = preg_replace($tokenPattern, '?', $processed);
+        if ($processed === null) {
+            $processed = $query;
+        }
+
+        return [$processed, $bindings];
     }
 
     private function prepare_columns_payload(array $columns): array
