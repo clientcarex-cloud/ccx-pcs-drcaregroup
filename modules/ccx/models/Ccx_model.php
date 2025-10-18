@@ -2089,6 +2089,7 @@ SQL;
     {
         $bindings = [];
 
+        // Replace filter placeholders with stable tokens so we can reshape quoted strings safely.
         $processed = preg_replace_callback('/\{\{filter:([A-Za-z0-9_]+)\}\}/', function ($matches) use (&$bindings, $filters) {
             $key = $matches[1];
             $bindings[] = array_key_exists($key, $filters) ? $filters[$key] : null;
